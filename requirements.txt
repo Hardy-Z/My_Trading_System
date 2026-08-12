@@ -1,0 +1,5 @@
+# Alpaca's official Python SDK provides market data and paper-trading clients.
+alpaca-py==0.43.5
+
+# python-dotenv loads local credentials from the ignored .env file.
+python-dotenv>=1.0,<2.0

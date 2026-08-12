@@ -1,0 +1,18 @@
+{
+  "company_name": "Demonstration Candidate Corp",
+  "symbol": "DEMO",
+  "as_of_date": "2024-01-03",
+  "is_us_company": true,
+  "eligible_exchange": true,
+  "eligible_security_type": true,
+  "already_in_sp500": false,
+  "total_market_cap_usd": "30000000000",
+  "security_float_adjusted_market_cap_usd": "20000000000",
+  "investable_weight_factor": "0.70",
+  "minimum_monthly_volume_last_six_months": "1000000",
+  "float_adjusted_liquidity_ratio": "1.20",
+  "latest_quarter_gaap_net_income": "250000000",
+  "trailing_four_quarters_gaap_net_income": "900000000",
+  "months_since_ipo": 36,
+  "market_cap_threshold_usd": "22700000000"
+}
