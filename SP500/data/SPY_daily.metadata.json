@@ -1,0 +1,16 @@
+{
+  "symbol": "SPY",
+  "source": "Alpaca historical stock bars",
+  "feed": "sip",
+  "adjustment": "all",
+  "raw_columns_adjustment": "raw",
+  "timeframe": "1Day",
+  "first_date": "2016-01-04 00:00:00",
+  "last_date": "2026-09-16 00:00:00",
+  "rows": 2691,
+  "downloaded_at_utc": "2026-09-17T13:50:24.956285+00:00",
+  "append_mode": true,
+  "new_data_adjustment_basis_factor": 1.0,
+  "previous_sha256": "fedb788d6029c7493e2ca8cd5356dc229ac216615a908d32b57454cd58e28dcd",
+  "sha256": "fedb788d6029c7493e2ca8cd5356dc229ac216615a908d32b57454cd58e28dcd"
+}
