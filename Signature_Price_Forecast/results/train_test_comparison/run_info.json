@@ -1,0 +1,53 @@
+{
+  "fixed_config": {
+    "window": 20,
+    "signature_depth": 3,
+    "regime_depth": 2,
+    "horizon": 1,
+    "lasso_alpha": 0.0005,
+    "regime_gamma": 0.5,
+    "correlation_min": 0.05,
+    "collinearity_max": 0.95,
+    "max_factors": 8,
+    "regime_factors": 3,
+    "max_train": 756,
+    "lasso_passes": 80,
+    "max_selected": 20
+  },
+  "reference_config": {
+    "window": 20,
+    "signature_depth": 2,
+    "regime_depth": 2,
+    "horizon": 1,
+    "lasso_alpha": 0.0005,
+    "regime_gamma": 0.5,
+    "correlation_min": 0.05,
+    "collinearity_max": 0.95,
+    "max_factors": 8,
+    "regime_factors": 3,
+    "max_train": 756,
+    "lasso_passes": 80,
+    "max_selected": 20
+  },
+  "reference_config_source": "C:\\Users\\Administrator\\\u6211\u7684\u4e91\u7aef\u786c\u76d8\\My_Trading_System\\Signature_Price_Forecast\\results\\daily_refit\\run_info.json",
+  "validation_search_executed": false,
+  "test_issue_first": "2024-01-02",
+  "test_issue_last": "2025-03-27",
+  "test_target_first": "2024-01-03",
+  "test_target_last": "2025-03-28",
+  "data_coverage": {
+    "finmultitime_quantitative": true,
+    "filing_sessions": 1820,
+    "factor_count": 19,
+    "text_and_images_used": false
+  },
+  "normalization_reference_issue": "2024-01-02",
+  "normalization_training_mean": 0.00037686622930109407,
+  "normalization_training_std_ddof1": 0.011072511308128221,
+  "reference_matches_original_saved_predictions": true,
+  "direction_return_threshold": 0.0,
+  "primary_metric": "test return MAE",
+  "bootstrap_block_length": 20,
+  "bootstrap_repetitions": 1000,
+  "seed": 17
+}

@@ -1,0 +1,5 @@
+method,checkpoint,forecast_issue,forecast_target,training_issue_first,training_issue_last,latest_training_target,training_examples
+Fixed defaults: train/test only,First test forecast,2024-01-02,2024-01-03,2020-12-29,2023-12-29,2024-01-02,756
+Fixed defaults: train/test only,Last test forecast,2025-03-27,2025-03-28,2022-03-22,2025-03-26,2025-03-27,756
+Previously selected reference,First test forecast,2024-01-02,2024-01-03,2020-12-29,2023-12-29,2024-01-02,756
+Previously selected reference,Last test forecast,2025-03-27,2025-03-28,2022-03-22,2025-03-26,2025-03-27,756

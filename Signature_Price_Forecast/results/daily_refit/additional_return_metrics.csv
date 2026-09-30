@@ -1,0 +1,2 @@
+evaluation,n,issue_first,issue_last,Pearson_Corr,MSE_log_returns,MSE_shared_training_normalized,zero_return_normalized_MSE,MSE_skill_vs_zero
+Full held-out test,310,2024-01-02,2025-03-27,0.015145628711664135,7.13782171539186e-05,0.5822016490261686,0.584621941384374,0.0041399273391521385

@@ -1,0 +1,9 @@
+numpy
+pandas
+matplotlib
+nbformat
+nbclient
+ipykernel
+requests
+Pillow
+torch

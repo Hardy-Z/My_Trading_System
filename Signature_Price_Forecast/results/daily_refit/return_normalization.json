@@ -1,0 +1,10 @@
+{
+  "method": "shared frozen training z-score",
+  "reference_issue_close": "2024-01-02",
+  "training_examples": 756,
+  "training_issue_first": "2020-12-29",
+  "training_issue_last": "2023-12-29",
+  "latest_training_target": "2024-01-02",
+  "mean_log_return": 0.00037686622930109407,
+  "std_log_return_ddof1": 0.011072511308128221
+}

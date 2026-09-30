@@ -1,0 +1,27 @@
+{
+  "model": "SPY signature adaptive two-step Lasso",
+  "target": "next-session SPY log return",
+  "config": {
+    "window": 20,
+    "signature_depth": 2,
+    "regime_depth": 2,
+    "horizon": 1,
+    "lasso_alpha": 0.0005,
+    "regime_gamma": 0.5,
+    "correlation_min": 0.05,
+    "collinearity_max": 0.95,
+    "max_factors": 8,
+    "regime_factors": 3,
+    "max_train": 756,
+    "lasso_passes": 80,
+    "max_selected": 20
+  },
+  "coverage": {
+    "finmultitime_quantitative": true,
+    "filing_sessions": 1820,
+    "factor_count": 19,
+    "text_and_images_used": false
+  },
+  "first_issue": "2024-01-02",
+  "last_issue": "2025-03-27"
+}

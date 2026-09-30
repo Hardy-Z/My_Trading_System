@@ -1,0 +1,2 @@
+fixed_minus_reference_MAE,descriptive_ci95_low,descriptive_ci95_high,block_length,repetitions
+-3.2478924685114394e-06,-3.249596641863377e-05,2.1385595905389052e-05,20,1000

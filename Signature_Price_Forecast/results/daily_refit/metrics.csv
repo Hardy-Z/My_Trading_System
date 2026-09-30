@@ -1,0 +1,2 @@
+ticker,n,threshold_log_return,direction_accuracy,majority_baseline,up_rate,predicted_up_rate,return_mae,return_rmse,zero_return_mae
+SPY,310,0.0,0.5870967741935483,0.5774193548387097,0.5774193548387097,0.964516129032258,0.00627736645153131,0.008448563023018683,0.006338209022331748
