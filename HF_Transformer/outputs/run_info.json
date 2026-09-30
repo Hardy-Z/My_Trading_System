@@ -1,0 +1,29 @@
+{
+  "settings": {
+    "seed": 42,
+    "daily_window": 32,
+    "minute_window": 24,
+    "width": 16,
+    "heads": 4,
+    "layers": 1,
+    "learning_rate": 0.0001,
+    "train_fraction": 0.5,
+    "validation_fraction": 0.15
+  },
+  "replay_sessions": 600,
+  "replay_start": "2024-05-06",
+  "replay_end": "2026-09-25",
+  "labels_per_etf": 232598,
+  "split_sessions": {
+    "train": 300,
+    "validation": 90,
+    "test": 210
+  },
+  "split_dates": {
+    "train_end": "2025-07-17",
+    "validation_end": "2025-11-21",
+    "test_end": "2026-09-25"
+  },
+  "train_updates": 116171,
+  "online_updates_total": 197588
+}
