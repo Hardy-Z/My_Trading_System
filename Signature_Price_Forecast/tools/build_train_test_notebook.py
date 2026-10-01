@@ -25,6 +25,8 @@ md(r"""## 1. Settings fixed before the replay
 
 The default no-validation model has response signature depth 3, compared with depth 2 in the current original report. All settings are displayed and saved. Edit `FIXED_CONFIG` for a prespecified future experiment; changing it after reviewing this test makes the test part of model tuning.
 
+Set `DIRECTION_UP_RETURN_THRESHOLD` and `DIRECTION_DOWN_RETURN_THRESHOLD` independently in log-return units (for example, `0.001` and `-0.002`). Predict up above the up cutoff and down at or below the down cutoff; forecasts between the cutoffs are neutral. The down cutoff must be no greater than the up cutoff. Both default to zero, preserving the original binary rule. Neutral forecasts count as misses in full-session direction accuracy and up/down recall; `predicted_neutral_rate` reports their frequency.
+
 Train/test means a chronological walk-forward replay here. At issue close $t$, use only labels whose target closes have been observed, then forecast $r_{t+1}=\log(C_{t+1}/C_t)$. Test outcomes become usable in later daily refits after their own target closes.""")
 
 code("""from pathlib import Path
@@ -40,7 +42,7 @@ if not (PROJECT / 'src' / 'spy_adaptive_lasso.py').exists():
     PROJECT = Path('Signature_Price_Forecast').resolve()
 sys.path.insert(0, str(PROJECT / 'src'))
 from spy_adaptive_lasso import (ForecastConfig, load_market_data, make_samples,
-                                replay, score_predictions, reconstruct_price_comparison)
+                                replay, score_predictions, print_direction_counts, reconstruct_price_comparison)
 ROOT = PROJECT.parent
 OUTPUT = PROJECT / 'results' / 'train_test_comparison'
 OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -49,7 +51,9 @@ USE_FINMULTITIME = True
 DATA_START, DATA_END = '2018-01-01', '2025-03-28'
 TEST_START, TEST_END = '2024-01-01', '2025-03-27'
 PLOT_AFTER_DATE = '2024-09-01'
-DIRECTION_RETURN_THRESHOLD = 0.0
+# Log-return cutoffs; forecasts between them are neutral.
+DIRECTION_UP_RETURN_THRESHOLD = 0.0
+DIRECTION_DOWN_RETURN_THRESHOLD = 0.0
 BLOCK_LENGTH, BOOTSTRAP_REPETITIONS, SEED = 20, 1000, 17
 
 # Existing library defaults; no candidate grid or validation selection.
@@ -133,11 +137,10 @@ if normalization_std <= 1e-14:
 rows = []
 for name, frame in predictions.items():
     y, p = frame.actual_return.to_numpy(), frame.predicted_return.to_numpy()
-    metric = score_predictions(frame, DIRECTION_RETURN_THRESHOLD).iloc[0].to_dict()
-    actual_up, predicted_up = y > 0, p > DIRECTION_RETURN_THRESHOLD
+    metric = score_predictions(frame, DIRECTION_UP_RETURN_THRESHOLD, DIRECTION_DOWN_RETURN_THRESHOLD).iloc[0].to_dict()
+    print_direction_counts(metric, name)
     corr = float(np.corrcoef(p, y)[0, 1]) if min(np.std(p), np.std(y)) > 1e-14 else np.nan
-    up_recall = float(predicted_up[actual_up].mean()) if actual_up.any() else np.nan
-    down_recall = float((~predicted_up[~actual_up]).mean()) if (~actual_up).any() else np.nan
+    up_recall, down_recall = metric['up_recall'], metric['down_recall']
     rows.append({'method': name, **metric, 'Pearson_Corr_full_test': corr,
                  'normalized_MSE': float(np.mean(((p-y)/normalization_std)**2)),
                  'balanced_accuracy': (up_recall+down_recall)/2,
@@ -214,7 +217,8 @@ display(Markdown(report))
     'normalization_training_mean': normalization_mean,
     'normalization_training_std_ddof1': normalization_std,
     'reference_matches_original_saved_predictions': matches_original,
-    'direction_return_threshold': DIRECTION_RETURN_THRESHOLD,
+    'direction_up_return_threshold': DIRECTION_UP_RETURN_THRESHOLD,
+    'direction_down_return_threshold': DIRECTION_DOWN_RETURN_THRESHOLD,
     'primary_metric': 'test return MAE', 'bootstrap_block_length': BLOCK_LENGTH,
     'bootstrap_repetitions': BOOTSTRAP_REPETITIONS, 'seed': SEED,
 }, indent=2), encoding='utf-8')""")

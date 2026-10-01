@@ -1,2 +1,2 @@
-ticker,n,threshold_log_return,direction_accuracy,majority_baseline,up_rate,predicted_up_rate,return_mae,return_rmse,zero_return_mae
-SPY,310,0.0,0.5870967741935483,0.5774193548387097,0.5774193548387097,0.964516129032258,0.00627736645153131,0.008448563023018683,0.006338209022331748
+ticker,n,actual_up_days,actual_down_days,predicted_up_days,predicted_down_days,predicted_neutral_days,correct_up_days,correct_down_days,up_precision,down_precision,threshold_log_return,down_threshold_log_return,direction_accuracy,up_recall,down_recall,balanced_accuracy,majority_baseline,up_rate,predicted_up_rate,predicted_down_rate,predicted_neutral_rate,return_mae,return_rmse,zero_return_mae
+SPY,310,179,131,299,11,0,175,7,0.5852842809364549,0.6363636363636364,0.0,0.0,0.5870967741935483,0.9776536312849162,0.05343511450381679,0.5155443728943665,0.5774193548387097,0.5774193548387097,0.964516129032258,0.035483870967741936,0.0,0.00627736645153131,0.008448563023018683,0.006338209022331748

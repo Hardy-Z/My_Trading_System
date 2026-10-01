@@ -1,0 +1,3 @@
+Metric,Adaptive two-step Lasso,Baseline,Baseline method
+Direction accuracy,0.5870967741935483,0.5774193548387097,Majority direction
+Return MAE,0.00627736645153131,0.006338209022331748,Zero return

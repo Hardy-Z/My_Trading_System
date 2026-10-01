@@ -29,7 +29,7 @@
     "lasso_passes": 80,
     "max_selected": 20
   },
-  "reference_config_source": "C:\\Users\\Administrator\\\u6211\u7684\u4e91\u7aef\u786c\u76d8\\My_Trading_System\\Signature_Price_Forecast\\results\\daily_refit\\run_info.json",
+  "reference_config_source": "c:\\Users\\Administrator\\\u6211\u7684\u4e91\u7aef\u786c\u76d8\\My_Trading_System\\Signature_Price_Forecast\\results\\daily_refit\\run_info.json",
   "validation_search_executed": false,
   "test_issue_first": "2024-01-02",
   "test_issue_last": "2025-03-27",
@@ -45,7 +45,8 @@
   "normalization_training_mean": 0.00037686622930109407,
   "normalization_training_std_ddof1": 0.011072511308128221,
   "reference_matches_original_saved_predictions": true,
-  "direction_return_threshold": 0.0,
+  "direction_up_return_threshold": 0.0001,
+  "direction_down_return_threshold": -0.0001,
   "primary_metric": "test return MAE",
   "bootstrap_block_length": 20,
   "bootstrap_repetitions": 1000,

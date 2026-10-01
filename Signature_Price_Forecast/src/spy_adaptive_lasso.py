@@ -342,23 +342,74 @@ def replay(samples: dict, config: ForecastConfig, start: str, end: str) -> pd.Da
     return pd.DataFrame(rows)
 
 
-def score_predictions(frame: pd.DataFrame, threshold: float = 0.0) -> pd.DataFrame:
-    """SPY log-return error and directional accuracy, with simple baselines."""
-    if not np.isfinite(threshold):
-        raise ValueError("threshold must be a finite log return")
+def predict_directions(forecast, up_threshold: float = 0.0,
+                       down_threshold: float | None = None) -> np.ndarray:
+    """Return +1 (up), -1 (down), or 0 (neutral) from log-return cutoffs.
+
+    Up requires forecast > up_threshold; down requires forecast <= down_threshold.
+    The interval (down_threshold, up_threshold] is neutral. A missing down
+    threshold uses the up threshold, preserving the original binary rule.
+    """
+    if down_threshold is None:
+        down_threshold = up_threshold
+    if not np.isfinite(up_threshold) or not np.isfinite(down_threshold):
+        raise ValueError("Direction thresholds must be finite log returns")
+    if down_threshold > up_threshold:
+        raise ValueError("down_threshold must be <= up_threshold")
+    forecast = np.asarray(forecast, dtype=np.float64)
+    return np.where(forecast > up_threshold, 1,
+                    np.where(forecast <= down_threshold, -1, 0))
+
+
+def score_predictions(frame: pd.DataFrame, threshold: float = 0.0,
+                      down_threshold: float | None = None) -> pd.DataFrame:
+    """Return errors and direction metrics; neutral forecasts count as misses.
+
+    ``threshold`` is the up cutoff, retained for compatibility with callers.
+    Actual returns > 0 are up; all other actual returns are down, as before.
+    """
     y = frame.actual_return.to_numpy(np.float64)
     forecast = frame.predicted_return.to_numpy(np.float64)
     actual_up = y > 0
-    predicted_up = forecast > threshold
+    direction = predict_directions(forecast, threshold, down_threshold)
+    predicted_up, predicted_down = direction == 1, direction == -1
+    correct_up_days = int((predicted_up & actual_up).sum())
+    correct_down_days = int((predicted_down & ~actual_up).sum())
+    up_recall = float(predicted_up[actual_up].mean()) if actual_up.any() else np.nan
+    down_recall = float(predicted_down[~actual_up].mean()) if (~actual_up).any() else np.nan
     return pd.DataFrame([{"ticker": TARGET, "n": len(frame),
+                          "actual_up_days": int(actual_up.sum()),
+                          "actual_down_days": int((~actual_up).sum()),
+                          "predicted_up_days": int(predicted_up.sum()),
+                          "predicted_down_days": int(predicted_down.sum()),
+                          "predicted_neutral_days": int((direction == 0).sum()),
+                          "correct_up_days": correct_up_days,
+                          "correct_down_days": correct_down_days,
+                          "up_precision": correct_up_days / int(predicted_up.sum()) if predicted_up.any() else np.nan,
+                          "down_precision": correct_down_days / int(predicted_down.sum()) if predicted_down.any() else np.nan,
                           "threshold_log_return": float(threshold),
-                          "direction_accuracy": float(np.mean(predicted_up == actual_up)),
+                          "down_threshold_log_return": float(threshold if down_threshold is None else down_threshold),
+                          "direction_accuracy": float(np.mean(direction == np.where(actual_up, 1, -1))),
+                          "up_recall": up_recall, "down_recall": down_recall,
+                          "balanced_accuracy": (up_recall + down_recall) / 2,
                           "majority_baseline": float(max(actual_up.mean(), 1 - actual_up.mean())),
                           "up_rate": float(actual_up.mean()),
                           "predicted_up_rate": float(predicted_up.mean()),
+                          "predicted_down_rate": float(predicted_down.mean()),
+                          "predicted_neutral_rate": float((direction == 0).mean()),
                           "return_mae": float(np.mean(np.abs(forecast - y))),
                           "return_rmse": float(np.sqrt(np.mean((forecast - y) ** 2))),
                           "zero_return_mae": float(np.mean(np.abs(y)))}])
+
+
+def print_direction_counts(metric: dict | pd.Series, label: str = "Evaluation") -> None:
+    """Print day counts from the same direction rules used for accuracy."""
+    print(f"{label} direction counts ({int(metric['n'])} days):")
+    print(f"  Predicted UP: {int(metric['predicted_up_days'])} days; "
+          f"DOWN: {int(metric['predicted_down_days'])} days; "
+          f"NEUTRAL: {int(metric['predicted_neutral_days'])} days")
+    print(f"  Actual UP: {int(metric['actual_up_days'])} days; "
+          f"DOWN (including zero returns): {int(metric['actual_down_days'])} days")
 
 
 def reconstruct_price_comparison(frame: pd.DataFrame, market: dict) -> pd.DataFrame:

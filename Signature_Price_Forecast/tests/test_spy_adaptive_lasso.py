@@ -9,7 +9,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from spy_adaptive_lasso import (AdaptiveTwoStepLasso, ForecastConfig, make_samples,
                                 piecewise_linear_signature, replay,
-                                reconstruct_price_comparison, score_predictions,
+                                predict_directions, reconstruct_price_comparison, score_predictions,
                                 select_factors)
 
 
@@ -31,6 +31,57 @@ def synthetic_samples():
 
 
 class AdaptiveTwoStepLassoTests(unittest.TestCase):
+    def test_separate_direction_thresholds_and_neutral_recall(self):
+        forecast = np.array([.004, -.005, .001, -.002, 0., .0015])
+        np.testing.assert_array_equal(predict_directions(forecast, .001, -.002),
+                                      [1, -1, 0, -1, 0, 1])
+        frame = pd.DataFrame({'actual_return': [.003, -.004, .002, -.003, -.001, -.001],
+                              'predicted_return': forecast})
+        metric = score_predictions(frame, .001, -.002).iloc[0]
+        self.assertAlmostEqual(metric.direction_accuracy, 3 / 6)
+        self.assertAlmostEqual(metric.up_recall, 1 / 2)
+        self.assertAlmostEqual(metric.down_recall, 2 / 4)
+        self.assertAlmostEqual(metric.balanced_accuracy, .5)
+        self.assertAlmostEqual(metric.predicted_neutral_rate, 2 / 6)
+        self.assertEqual(metric.actual_up_days, 2)
+        self.assertEqual(metric.actual_down_days, 4)
+        self.assertEqual(metric.predicted_up_days, 2)
+        self.assertEqual(metric.predicted_down_days, 2)
+        self.assertEqual(metric.predicted_neutral_days, 2)
+        self.assertEqual(metric.correct_up_days, 1)
+        self.assertEqual(metric.correct_down_days, 2)
+        self.assertAlmostEqual(metric.up_precision, .5)
+        self.assertAlmostEqual(metric.down_precision, 1.)
+        self.assertAlmostEqual(metric.predicted_up_rate + metric.predicted_down_rate
+                               + metric.predicted_neutral_rate, 1.)
+        self.assertEqual(metric.threshold_log_return, .001)
+        self.assertEqual(metric.down_threshold_log_return, -.002)
+
+    def test_direction_threshold_defaults_preserve_binary_rule(self):
+        forecast = np.array([-.003, 0., .001, .003])
+        y = np.array([-.002, 0., .002, -.001])
+        frame = pd.DataFrame({'actual_return': y, 'predicted_return': forecast})
+        for threshold in [0., .001, -.001]:
+            metric = score_predictions(frame, threshold=threshold).iloc[0]
+            self.assertEqual(metric.direction_accuracy,
+                             np.mean((forecast > threshold) == (y > 0)))
+            self.assertEqual(metric.predicted_neutral_rate, 0.)
+        pd.testing.assert_frame_equal(score_predictions(frame), score_predictions(frame, 0., 0.))
+
+    def test_direction_precision_without_predictions_is_undefined(self):
+        frame = pd.DataFrame({'actual_return': [.001, -.001], 'predicted_return': [0., 0.]})
+        metric = score_predictions(frame, .001, -.001).iloc[0]
+        self.assertEqual(metric.correct_up_days, 0)
+        self.assertEqual(metric.correct_down_days, 0)
+        self.assertTrue(np.isnan(metric.up_precision))
+        self.assertTrue(np.isnan(metric.down_precision))
+
+    def test_direction_thresholds_reject_nonfinite_and_overlap(self):
+        frame = pd.DataFrame({'actual_return': [.001], 'predicted_return': [.001]})
+        for up, down in [(np.nan, 0.), (0., np.inf), (-.001, .001)]:
+            with self.subTest(up=up, down=down), self.assertRaises(ValueError):
+                score_predictions(frame, up, down)
+
     def test_straight_line_and_order(self):
         line = np.array([[[0.], [.3], [1.]]])
         np.testing.assert_allclose(piecewise_linear_signature(line, 3)[0],

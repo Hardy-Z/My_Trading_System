@@ -1,0 +1,2 @@
+method,n,correct_days,incorrect_days,direction_accuracy,predicted_up_days,predicted_down_days,actual_up_days,actual_down_days,up_recall,down_recall,balanced_accuracy
+Repeat previous trading day direction,310,158,152,0.5096774193548387,179,131,179,131,0.5754189944134078,0.4198473282442748,0.4976331613288413

@@ -1,0 +1,14 @@
+{
+  "method": "Repeat previous trading day direction",
+  "spy_file": "C:\\Users\\Administrator\\\u6211\u7684\u4e91\u7aef\u786c\u76d8\\My_Trading_System\\SP500\\attention_data\\SPY_daily.csv",
+  "calendar_file": "C:\\Users\\Administrator\\\u6211\u7684\u4e91\u7aef\u786c\u76d8\\My_Trading_System\\Signature_Price_Forecast\\results\\daily_refit\\predictions.csv",
+  "issue_first": "2024-01-02",
+  "issue_last": "2025-03-27",
+  "target_first": "2024-01-03",
+  "target_last": "2025-03-28",
+  "prediction_information": "Close-to-close return ending at the issue close",
+  "direction_rule": "Positive return = UP; zero or negative return = DOWN",
+  "days": 310,
+  "correct_days": 158,
+  "direction_accuracy": 0.5096774193548387
+}

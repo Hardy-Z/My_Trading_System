@@ -1,0 +1,4 @@
+method,correct_days,direction_accuracy
+Repeat previous trading day,158,0.5096774193548387
+Always UP,179,0.5774193548387097
+Always DOWN,131,0.42258064516129035
