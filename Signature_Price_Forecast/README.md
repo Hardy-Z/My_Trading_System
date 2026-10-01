@@ -45,16 +45,4 @@ Signature_Price_Forecast/
   results/train_test_comparison/  Matched train/test comparison outputs
 ```
 
-## Reproduce with Quant_ENV
-
-Open the notebook with the `Quant_ENV` kernel and run all cells from this project folder. The notebook inserts `src/` into its Python path. From PowerShell, focused checks are:
-
-```powershell
-& 'C:\ProgramData\Anaconda3\envs\Quant_ENV\python.exe' -m unittest discover -s tests -v
-```
-
-The notebook builders are `tools/build_notebook.py` and `tools/build_train_test_notebook.py`. Run them only when editing report templates, since rebuilding removes saved cell outputs. The Python requirements are listed in `requirements.txt`.
-
-The final notebook section reports one Pearson return correlation over the full test period and MSE normalized with a shared, frozen training mean and standard deviation. Definitions, normalization dates and a scatter plot are included. Results are saved under `results/daily_refit/` as `additional_return_metrics.csv`, `return_normalization.json`, and `additional_return_metrics.png`.
-
 The paper motivating the adaptive signature and two-step Lasso workflow is [*Transportation Marketplace Rate Forecast Using Signature Transform*](../Papers/Transportation%20Marketplace%20Rate%20Forecast%20Using%20Signature%20Transform.pdf). The notebook does not establish a profitable trading rule.
