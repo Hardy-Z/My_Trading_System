@@ -17,6 +17,6 @@ The baseline row reports zero-return MAE and always-up direction accuracy. Resul
 
 ## Dataset
 
-- **Prices:** local SPY, QQQ, and IWM daily open/close data in `../SP500/attention_data/`, with common coverage January 2, 2018–March 28, 2025 (1,820 sessions).
+- **Prices:** local SPY, QQQ, and IWM daily open/close data in `../data/etf_daily/`, with common coverage January 2, 2018–March 28, 2025 (1,820 sessions).
 - **Factors:** 19 quantitative inputs: six QQQ/IWM return and volatility features, eight FinMultiTime price/breadth fields, and five numeric filing-table fields. Filing data become usable the session after filing; news and images are excluded.
 - **Validation:** forecast issues in 2023. **Test:** forecast issues January 2, 2024–March 27, 2025, targeting January 3, 2024–March 28, 2025.

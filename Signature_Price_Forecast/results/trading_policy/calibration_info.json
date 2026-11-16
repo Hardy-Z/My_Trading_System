@@ -1,0 +1,26 @@
+{
+  "identity": "67ef54ef2cc54f88360e15cfa18c5316e1fd9d6624ff8de7034383f151fcc935",
+  "csv_sha256": "7743fae23ddd07ecb19510ec9faebd042cbe9ffd8e556529a2b8ed80f15a823e",
+  "method": "Frozen empirical mid-CDF of causal pre-test walk-forward forecasts",
+  "forecast_count": 756,
+  "issue_first": "2020-12-29",
+  "issue_last": "2023-12-29",
+  "latest_target": "2024-01-02",
+  "known_by_issue_close": "2024-01-02",
+  "config": {
+    "window": 20,
+    "signature_depth": 2,
+    "regime_depth": 2,
+    "horizon": 1,
+    "lasso_alpha": 0.0005,
+    "regime_gamma": 0.5,
+    "correlation_min": 0.05,
+    "collinearity_max": 0.95,
+    "max_factors": 8,
+    "regime_factors": 3,
+    "max_train": 756,
+    "lasso_passes": 80,
+    "max_selected": 20
+  },
+  "selection": "Most recent max_train matured examples at the first saved test issue; model settings from saved validation selection"
+}

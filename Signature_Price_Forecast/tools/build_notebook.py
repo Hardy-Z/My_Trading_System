@@ -86,7 +86,7 @@ md(r"""## 2. Data provenance and forecast chronology
 
 | Role | Source and fields | Availability at issue close |
 |---|---|---|
-| Response history and label | `../SP500/attention_data/SPY_daily.csv`: SPY close history; next-session close creates the realized log-return label. | History through issue close; label only after target close. |
+| Response history and label | `../data/etf_daily/SPY_daily.csv`: SPY close history; next-session close creates the realized log-return label. | History through issue close; label only after target close. |
 | Local quantitative $X$ | `QQQ_daily.csv` and `IWM_daily.csv` in the same folder: daily return, intraday change, 20-session volatility for each ETF. | Completed issue-session bars. |
 | FinMultiTime quantitative $X$ | Numeric OHLCV/range and S&P 500 breadth aggregates from the FinMultiTime daily archive. | Completed issue-session data. |
 | FinMultiTime filing-table $X$ | Numeric assets, liabilities, equity and cash ratios plus filing coverage. | First usable on the session **after** filing date. |

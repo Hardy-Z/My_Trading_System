@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 TARGET = "SPY"
+ETF_DATA_DIR = Path("data") / "etf_daily"  # relative to the repository root
 PRICE_FACTOR_INDICES = (7, 8, 10, 11, 12, 13, 14, 15)
 PRICE_FACTOR_NAMES = (
     "SPY_high_low_range", "SPY_log_volume", "QQQ_high_low_range",
@@ -88,7 +89,7 @@ def piecewise_linear_signature(paths: np.ndarray, depth: int) -> np.ndarray:
 def _local_etf_data(root: Path) -> pd.DataFrame:
     frames = []
     for ticker in ("SPY", "QQQ", "IWM"):
-        frame = pd.read_csv(root / "SP500" / "attention_data" / f"{ticker}_daily.csv",
+        frame = pd.read_csv(root / ETF_DATA_DIR / f"{ticker}_daily.csv",
                             usecols=["date", "open", "close"])
         frame["date"] = pd.to_datetime(frame["date"])
         frame = frame.set_index("date").sort_index()
@@ -118,11 +119,11 @@ def load_market_data(root: Path, *, use_finmultitime: bool = True,
              "QQQ_volatility20", "IWM_volatility20"]
     coverage = {"finmultitime_quantitative": False}
     if use_finmultitime:
-        sys.path.insert(0, str(root / "HF_Transformer"))
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
         from finmultitime_daily import download_price_archive, price_features, table_features
 
         numeric_cache = cache_dir or Path(tempfile.gettempdir()) / "codex_finmultitime_source"
-        target_dir = root / "SP500" / "attention_data"
+        target_dir = root / ETF_DATA_DIR
         price_zip = download_price_archive(numeric_cache)
         base_cache = numeric_cache / "price_base.npz"
         base_manifest = numeric_cache / "price_base_manifest.json"

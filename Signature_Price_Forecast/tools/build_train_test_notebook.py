@@ -77,9 +77,9 @@ md(r"""## 2. Data and actual rolling training dates
 
 | Input | Source and use |
 |---|---|
-| SPY history and response | Local daily SPY CSV in `../SP500/attention_data/`; past close paths create signatures and subsequent closes create labels. |
+| SPY history and response | Local daily SPY CSV in `../data/etf_daily/`; past close paths create signatures and subsequent closes create labels. |
 | QQQ and IWM quantitative factors | Local daily CSVs in the same directory; returns, intraday changes and 20-session volatility. |
-| FinMultiTime numeric factors | Price/range, volume and market breadth plus numeric filing-table ratios through `../HF_Transformer/finmultitime_daily.py`. Filing fields become usable the session after filing. |
+| FinMultiTime numeric factors | Price/range, volume and market breadth plus numeric filing-table ratios through `src/finmultitime_daily.py`. Filing fields become usable the session after filing. |
 
 There are 19 candidate quantitative fields in the default run. News and chart images are excluded. The loaded source snapshot ends on 2025-03-28. The rolling training table distinguishes **training issue dates** from **training target dates**. Training updates after each completed test target; future labels are excluded by the shared replay implementation.""")
 
