@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 TARGET = "SPY"
-ETF_DATA_DIR = Path("data") / "etf_daily"  # relative to the repository root
+IC_MIN_SESSIONS = 5
 PRICE_FACTOR_INDICES = (7, 8, 10, 11, 12, 13, 14, 15)
 PRICE_FACTOR_NAMES = (
     "SPY_high_low_range", "SPY_log_volume", "QQQ_high_low_range",
@@ -86,14 +86,12 @@ def piecewise_linear_signature(paths: np.ndarray, depth: int) -> np.ndarray:
     return np.concatenate(levels[1:], axis=1).astype(np.float32)
 
 
-def _local_etf_data(root: Path) -> pd.DataFrame:
-    frames = []
-    for ticker in ("SPY", "QQQ", "IWM"):
-        frame = pd.read_csv(root / ETF_DATA_DIR / f"{ticker}_daily.csv",
-                            usecols=["date", "open", "close"])
-        frame["date"] = pd.to_datetime(frame["date"])
-        frame = frame.set_index("date").sort_index()
-        frames.append(frame.rename(columns=lambda c: f"{ticker}_{c}"))
+def _etf_data() -> pd.DataFrame:
+    """SPY, QQQ and IWM daily open/close from qrd (us/etf/daily_bars)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from market_data import etf_daily
+    frames = [etf_daily(ticker).rename(columns=lambda c, t=ticker: f"{t}_{c}")
+              for ticker in ("SPY", "QQQ", "IWM")]
     joined = pd.concat(frames, axis=1, join="inner").dropna()
     if joined.empty or not joined.index.is_unique or (joined <= 0).any().any():
         raise ValueError("ETF prices must be positive with unique common dates")
@@ -105,7 +103,7 @@ def load_market_data(root: Path, *, use_finmultitime: bool = True,
                      cache_dir: Path | None = None) -> dict:
     """Load SPY y and same-close quantitative X; exclude text and image inputs."""
     root = root.resolve()
-    etf = _local_etf_data(root).loc[start:end]
+    etf = _etf_data().loc[start:end]
     if len(etf) < 150:
         raise ValueError("Need at least 150 common ETF sessions")
     dates = pd.DatetimeIndex(etf.index)
@@ -120,24 +118,23 @@ def load_market_data(root: Path, *, use_finmultitime: bool = True,
     coverage = {"finmultitime_quantitative": False}
     if use_finmultitime:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from finmultitime_daily import download_price_archive, price_features, table_features
+        from finmultitime_daily import (download_price_archive, etf_fingerprint, etf_open_close,
+                                        price_features, table_features)
 
         numeric_cache = cache_dir or Path(tempfile.gettempdir()) / "codex_finmultitime_source"
-        target_dir = root / ETF_DATA_DIR
+        etf_prices = etf_open_close()
         price_zip = download_price_archive(numeric_cache)
         base_cache = numeric_cache / "price_base.npz"
         base_manifest = numeric_cache / "price_base_manifest.json"
         source_stat = {"price_zip": [price_zip.stat().st_size, price_zip.stat().st_mtime_ns],
-                       "targets": {symbol: [(target_dir / f"{symbol}_daily.csv").stat().st_size,
-                                             (target_dir / f"{symbol}_daily.csv").stat().st_mtime_ns]
-                                   for symbol in ("SPY", "QQQ", "IWM")}}
+                       "target_prices": etf_fingerprint(etf_prices)}
         if (base_cache.exists() and base_manifest.exists()
                 and json.loads(base_manifest.read_text()) == source_stat):
             with np.load(base_cache) as base:
                 source_dates = pd.DatetimeIndex(pd.to_datetime(base["dates"]))
                 source_price = base["price"]
         else:
-            source_dates, source_price, source_labels = price_features(price_zip, target_dir)
+            source_dates, source_price, source_labels = price_features(price_zip, etf_prices)
             np.savez_compressed(base_cache,
                                 dates=np.asarray(source_dates.strftime("%Y-%m-%d"), dtype="U10"),
                                 price=source_price, labels=source_labels)
@@ -362,12 +359,67 @@ def predict_directions(forecast, up_threshold: float = 0.0,
                     np.where(forecast <= down_threshold, -1, 0))
 
 
+def pearson_corr(predicted, realized) -> float:
+    """Pearson correlation; NaN with fewer than two pairs or a constant series."""
+    p, y = np.asarray(predicted, np.float64), np.asarray(realized, np.float64)
+    if p.shape != y.shape or not np.isfinite(p).all() or not np.isfinite(y).all():
+        raise ValueError("Correlation requires aligned, finite prediction/outcome pairs")
+    if len(p) < 2 or np.std(p) <= 1e-14 or np.std(y) <= 1e-14:
+        return np.nan
+    return float(np.corrcoef(p, y)[0, 1])
+
+
+def monthly_ic(frame: pd.DataFrame, min_sessions: int = IC_MIN_SESSIONS) -> pd.DataFrame:
+    """Information coefficient for each calendar month of target dates.
+
+    One month's IC is the Pearson correlation between that month's predicted
+    and realized returns. Months with fewer than ``min_sessions`` forecasts, or
+    with a constant series, have an undefined IC and are left out.
+    """
+    months = pd.to_datetime(frame.target_date).dt.to_period("M")
+    rows = []
+    for month, block in frame.groupby(months.to_numpy(), sort=True):
+        if len(block) < min_sessions:
+            continue
+        ic = pearson_corr(block.predicted_return, block.actual_return)
+        if np.isfinite(ic):
+            rows.append({"month": str(month), "sessions": len(block), "ic": ic})
+    return pd.DataFrame(rows, columns=["month", "sessions", "ic"])
+
+
+def information_ratio(ic) -> float:
+    """ICIR = mean(IC) / sample std(IC); NaN with fewer than two IC values."""
+    ic = np.asarray(ic, np.float64)
+    if len(ic) < 2 or np.std(ic, ddof=1) <= 1e-14:
+        return np.nan
+    return float(np.mean(ic) / np.std(ic, ddof=1))
+
+
 def score_predictions(frame: pd.DataFrame, threshold: float = 0.0,
                       down_threshold: float | None = None) -> pd.DataFrame:
-    """Return errors and direction metrics; neutral forecasts count as misses.
+    """The four evaluation metrics: direction accuracy, Corr, MSE and ICIR.
 
-    ``threshold`` is the up cutoff, retained for compatibility with callers.
-    Actual returns > 0 are up; all other actual returns are down, as before.
+    ``threshold`` is the up cutoff. Actual returns > 0 are up; all other actual
+    returns are down. Neutral forecasts count as direction misses. Corr is the
+    Pearson correlation over the whole frame, MSE is in squared log-return
+    units, and ICIR is taken over the monthly ICs from ``monthly_ic``.
+    """
+    y = frame.actual_return.to_numpy(np.float64)
+    forecast = frame.predicted_return.to_numpy(np.float64)
+    direction = predict_directions(forecast, threshold, down_threshold)
+    return pd.DataFrame([{"ticker": TARGET, "n": len(frame),
+                          "direction_accuracy": float(np.mean(direction == np.where(y > 0, 1, -1))),
+                          "corr": pearson_corr(forecast, y),
+                          "mse": float(np.mean((forecast - y) ** 2)),
+                          "icir": information_ratio(monthly_ic(frame).ic)}])
+
+
+def direction_summary(frame: pd.DataFrame, threshold: float = 0.0,
+                      down_threshold: float | None = None) -> pd.DataFrame:
+    """Day counts and hit rates behind direction accuracy.
+
+    Uses the same rules as ``score_predictions``: neutral forecasts count as
+    misses in direction accuracy and in up/down recall.
     """
     y = frame.actual_return.to_numpy(np.float64)
     forecast = frame.predicted_return.to_numpy(np.float64)
@@ -397,14 +449,11 @@ def score_predictions(frame: pd.DataFrame, threshold: float = 0.0,
                           "up_rate": float(actual_up.mean()),
                           "predicted_up_rate": float(predicted_up.mean()),
                           "predicted_down_rate": float(predicted_down.mean()),
-                          "predicted_neutral_rate": float((direction == 0).mean()),
-                          "return_mae": float(np.mean(np.abs(forecast - y))),
-                          "return_rmse": float(np.sqrt(np.mean((forecast - y) ** 2))),
-                          "zero_return_mae": float(np.mean(np.abs(y)))}])
+                          "predicted_neutral_rate": float((direction == 0).mean())}])
 
 
 def print_direction_counts(metric: dict | pd.Series, label: str = "Evaluation") -> None:
-    """Print day counts from the same direction rules used for accuracy."""
+    """Print day counts from a ``direction_summary`` row."""
     print(f"{label} direction counts ({int(metric['n'])} days):")
     print(f"  Predicted UP: {int(metric['predicted_up_days'])} days; "
           f"DOWN: {int(metric['predicted_down_days'])} days; "

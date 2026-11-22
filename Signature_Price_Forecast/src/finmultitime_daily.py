@@ -123,15 +123,22 @@ def _date_index(values):
     return pd.to_datetime(values, utc=True).tz_localize(None).normalize()
 
 
-def price_features(price_zip: Path, target_dir: Path) -> tuple[pd.DatetimeIndex, np.ndarray, np.ndarray]:
-    """ETF OHLC and all-symbol market breadth, aligned on ETF sessions."""
-    frames = []
-    for symbol in TARGETS:
-        frame = pd.read_csv(target_dir / f"{symbol}_daily.csv")
-        frame["date"] = pd.to_datetime(frame["date"])
-        frame = frame.set_index("date").sort_index()
-        frames.append(frame[["open", "close"]].rename(columns=lambda c: f"{symbol}_{c}"))
-    etf = pd.concat(frames, axis=1, join="inner").dropna()
+def etf_open_close() -> pd.DataFrame:
+    """Daily open/close of the target ETFs (qrd us/etf/daily_bars), on their common sessions."""
+    from market_data import etf_daily
+    frames = [etf_daily(symbol)[["open", "close"]].rename(columns=lambda c, s=symbol: f"{s}_{c}")
+              for symbol in TARGETS]
+    return pd.concat(frames, axis=1, join="inner").dropna()
+
+
+def etf_fingerprint(etf: pd.DataFrame) -> str:
+    """Hash of the ETF prices, used to invalidate caches built from them."""
+    import hashlib
+    return hashlib.sha256(pd.util.hash_pandas_object(etf, index=True).to_numpy().tobytes()).hexdigest()
+
+
+def price_features(price_zip: Path, etf: pd.DataFrame) -> tuple[pd.DatetimeIndex, np.ndarray, np.ndarray]:
+    """ETF OHLC and all-symbol market breadth, aligned on ETF sessions (etf from etf_open_close())."""
     with zipfile.ZipFile(price_zip) as archive:
         upper = []
         for symbol in TARGETS[:2]:
@@ -389,15 +396,15 @@ def image_features(dates: pd.DatetimeIndex, cache_dir: Path, symbols=CONTEXT) ->
     return result, np.array([symbols_found, len(event_vectors)])
 
 
-def build_dataset(target_dir: Path, cache_dir: Path, start="2018-01-01", end="2025-03-28") -> dict:
+def build_dataset(cache_dir: Path, start="2018-01-01", end="2025-03-28") -> dict:
     cache_dir.mkdir(parents=True, exist_ok=True)
+    etf = etf_open_close()
+    etf_hash = etf_fingerprint(etf)
     prepared = cache_dir / "prepared.npz"
     manifest = cache_dir / "prepared_manifest.json"
     settings = {"feature_version": 5, "start": start, "end": end, "context": list(CONTEXT), "news_dim": NEWS_DIM,
                 "image_size": IMAGE_SIZE, "targets": list(TARGETS), "source": BASE,
-                "target_files": {symbol: [(target_dir / f"{symbol}_daily.csv").stat().st_size,
-                                          (target_dir / f"{symbol}_daily.csv").stat().st_mtime_ns]
-                                 for symbol in TARGETS}}
+                "target_prices": etf_hash}
     if prepared.exists() and manifest.exists() and json.loads(manifest.read_text()) == settings:
         with np.load(prepared) as data:
             return {key: data[key] for key in data.files}
@@ -405,15 +412,13 @@ def build_dataset(target_dir: Path, cache_dir: Path, start="2018-01-01", end="20
     base_cache = cache_dir / "price_base.npz"
     base_manifest = cache_dir / "price_base_manifest.json"
     source_stat = {"price_zip": [price_zip.stat().st_size, price_zip.stat().st_mtime_ns],
-                   "targets": {symbol: [(target_dir / f"{symbol}_daily.csv").stat().st_size,
-                                        (target_dir / f"{symbol}_daily.csv").stat().st_mtime_ns]
-                               for symbol in TARGETS}}
+                   "target_prices": etf_hash}
     if base_cache.exists() and base_manifest.exists() and json.loads(base_manifest.read_text()) == source_stat:
         with np.load(base_cache) as base:
             all_dates = pd.DatetimeIndex(pd.to_datetime(base["dates"]))
             price, labels = base["price"], base["labels"]
     else:
-        all_dates, price, labels = price_features(price_zip, target_dir)
+        all_dates, price, labels = price_features(price_zip, etf)
         np.savez_compressed(base_cache, dates=np.asarray(all_dates.strftime("%Y-%m-%d"), dtype="U10"),
                             price=price, labels=labels)
         base_manifest.write_text(json.dumps(source_stat, indent=2))

@@ -1,8 +1,8 @@
 # Local backup of old projects. Never push.
 _backup/
 
-# Alpaca price data: kept locally, not shared publicly (see data/README.md).
-data/etf_daily/
+# Local data folder (data now comes from the quant-research-dataset library).
+data/
 
 # Keep API credentials and local environment overrides out of version control.
 .env

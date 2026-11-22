@@ -9,7 +9,6 @@ It uses the **signature transform**, a math tool that turns a price path into nu
 |---|---|
 | [Signature_Price_Forecast](Signature_Price_Forecast/) | The main project: code, notebooks, tests, and results |
 | [Papers](Papers/) | Research papers the project is based on |
-| [data](data/) | Data files and notes on how to get the price data |
 
 ## Result in one line
 
@@ -19,6 +18,6 @@ See [Signature_Price_Forecast](Signature_Price_Forecast/) for details.
 
 ## Quick start
 
-1. Install Python 3.9 or newer, then run `pip install -r Signature_Price_Forecast/requirements.txt`.
-2. Put SPY, QQQ, and IWM daily price files in `data/etf_daily/` (see [data/README.md](data/README.md)).
+1. Install Python 3.10 or newer, then run `pip install -r Signature_Price_Forecast/requirements.txt`.
+2. Price data comes from the [quant-research-dataset](https://pypi.org/project/quant-research-dataset/) library. Set `QRD_DATA_DIR` in `.env` to your local qrd data folder (see [Signature_Price_Forecast](Signature_Price_Forecast/README.md#setup)).
 3. Open `Signature_Price_Forecast/signature_price_forecast.ipynb` and run it.

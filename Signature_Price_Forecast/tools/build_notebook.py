@@ -22,7 +22,9 @@ md(r"""# SPY signature adaptive two-step Lasso — project report
 
 **Evaluation design.** Daily bars span 2018-01-02 to 2025-03-28. Candidate settings are chosen from forecasts issued in 2023. The untouched comparison period contains forecasts issued 2024-01-02 to 2025-03-27 for target closes 2024-01-03 to 2025-03-28. Each issue date uses a **rolling maximum of 756 matured training examples**, so the exact training dates change at each refit. Section 2 prints the realized calendar boundaries; Section 5 selects the candidate and Section 6 reports held-out results.
 
-**Deliverables.** The model predicts one SPY log return per issue date. `results/daily_refit/` contains per-date forecasts, summary metrics, factor selections and plots.
+**Evaluation metrics.** Every evaluation reports the same four metrics: **direction accuracy**, **Corr**, **MSE** and **ICIR**. Section 6 defines them and reports each one on the held-out test.
+
+**Deliverables.** The model predicts one SPY log return per issue date. `results/daily_refit/` contains per-date forecasts, the four metrics, monthly ICs, factor selections and plots.
 
 At the close of session $t$, forecast the **next-session SPY log return** $r_{t+1}=\log(C_{t+1}/C_t)$. The model emits one scalar predicted log return. Prices are used only to construct historical inputs and realized labels; this notebook does not forecast prices or probabilities. Direction accuracy compares the signs of predicted and realized returns.
 
@@ -41,7 +43,7 @@ The paper's word *adaptive* refers to **sample weights from the signature kernel
 
 md(r"""## 1. Settings
 
-The model refits every issue session with matured labels, so it is updated as new daily data arrive. All candidates below have `regime_gamma>0`, ensuring the delivered fit uses adaptive signature weights. Change candidate settings here, choose by validation return MAE, and inspect the held-out test once. Set `DIRECTION_UP_RETURN_THRESHOLD` and `DIRECTION_DOWN_RETURN_THRESHOLD` independently in log-return units (for example, `0.001` and `-0.002`). Predict up above the up cutoff and down at or below the down cutoff; forecasts between the cutoffs are neutral. The down cutoff must be no greater than the up cutoff. Both default to zero, preserving the original binary rule. Neutral forecasts count as misses in full-session direction accuracy and up/down recall; `predicted_neutral_rate` reports their frequency. Choose changed thresholds using validation data.""")
+The model refits every issue session with matured labels, so it is updated as new daily data arrive. All candidates below have `regime_gamma>0`, ensuring the delivered fit uses adaptive signature weights. Change candidate settings here, choose by validation MSE, and inspect the held-out test once. Set `DIRECTION_UP_RETURN_THRESHOLD` and `DIRECTION_DOWN_RETURN_THRESHOLD` independently in log-return units (for example, `0.001` and `-0.002`). Predict up above the up cutoff and down at or below the down cutoff; forecasts between the cutoffs are neutral. The down cutoff must be no greater than the up cutoff. Both default to zero, preserving the original binary rule. Neutral forecasts count as misses in direction accuracy; the direction counts report how many there are. Choose changed thresholds using validation data.""")
 
 code("""from pathlib import Path
 import sys
@@ -55,8 +57,9 @@ if not (PROJECT / 'src' / 'spy_adaptive_lasso.py').exists():
 sys.path.insert(0, str(PROJECT / 'src'))
 from spy_adaptive_lasso import (ForecastConfig, TARGET, load_market_data,
                                 make_samples, replay, reconstruct_price_comparison,
-                                score_predictions, print_direction_counts,
-                                select_factors, save_run)
+                                score_predictions, direction_summary,
+                                print_direction_counts, monthly_ic,
+                                information_ratio, select_factors, save_run)
 
 ROOT = PROJECT.parent
 OUTPUT = PROJECT / 'results' / 'daily_refit'
@@ -86,8 +89,8 @@ md(r"""## 2. Data provenance and forecast chronology
 
 | Role | Source and fields | Availability at issue close |
 |---|---|---|
-| Response history and label | `../data/etf_daily/SPY_daily.csv`: SPY close history; next-session close creates the realized log-return label. | History through issue close; label only after target close. |
-| Local quantitative $X$ | `QQQ_daily.csv` and `IWM_daily.csv` in the same folder: daily return, intraday change, 20-session volatility for each ETF. | Completed issue-session bars. |
+| Response history and label | SPY daily bars from the quant-research-dataset library (`qrd`, dataset `us/etf/daily_bars`): SPY close history; next-session close creates the realized log-return label. | History through issue close; label only after target close. |
+| Local quantitative $X$ | QQQ and IWM bars from the same qrd dataset: daily return, intraday change, 20-session volatility for each ETF. | Completed issue-session bars. |
 | FinMultiTime quantitative $X$ | Numeric OHLCV/range and S&P 500 breadth aggregates from the FinMultiTime daily archive. | Completed issue-session data. |
 | FinMultiTime filing-table $X$ | Numeric assets, liabilities, equity and cash ratios plus filing coverage. | First usable on the session **after** filing date. |
 
@@ -182,7 +185,7 @@ Only labels with target date at or before the issue close are allowed in either 
 
 md(r"""## 5. Chronological validation
 
-Compare a small prespecified candidate set on 2023. Select the lowest SPY log-return MAE. The 2024–2025 test period is kept out of this choice. The zero-return baseline always forecasts 0; `majority_baseline` is the more frequent actual direction in the evaluation slice and is a hindsight diagnostic.""")
+Compare a small prespecified candidate set on 2023 and select the lowest validation **MSE**. The table reports all four metrics for every candidate; Section 6 defines them. The 2024–2025 test period is kept out of this choice.""")
 
 code("""validation_frames = {}
 rows = []
@@ -190,42 +193,39 @@ for name, cfg in CANDIDATES.items():
     frame = replay(examples[name], cfg, VALIDATION_START, VALIDATION_END)
     validation_frames[name] = frame
     metric = score_predictions(frame, DIRECTION_UP_RETURN_THRESHOLD, DIRECTION_DOWN_RETURN_THRESHOLD).iloc[0]
-    print_direction_counts(metric, f'Validation: {name}')
-    rows.append({'candidate': name, 'validation_return_mae': metric.return_mae,
-                 'validation_direction_accuracy': metric.direction_accuracy,
-                 'validation_return_rmse': metric.return_rmse,
+    rows.append({'candidate': name, 'validation_direction_accuracy': metric.direction_accuracy,
+                 'validation_corr': metric['corr'], 'validation_mse': metric.mse,
+                 'validation_icir': metric.icir,
                  'median_lasso_support': frame.lasso_support_count.median(),
                  'median_effective_train_n': frame.effective_train_n.median()})
-selection = pd.DataFrame(rows).sort_values('validation_return_mae').reset_index(drop=True)
+selection = pd.DataFrame(rows).sort_values('validation_mse').reset_index(drop=True)
 BEST_NAME = selection.loc[0, 'candidate']
 BEST_CONFIG = CANDIDATES[BEST_NAME]
 display(selection)
-print('Chosen using validation return MAE:', BEST_NAME)
-display(score_predictions(validation_frames[BEST_NAME], DIRECTION_UP_RETURN_THRESHOLD, DIRECTION_DOWN_RETURN_THRESHOLD))""")
+print('Chosen using validation MSE:', BEST_NAME)""")
 
-md(r"""## 6. Held-out test
+md(r"""## 6. Held-out test: four metrics
 
-Replay the selected model on 2024-01-02 through 2025-03-27. It refits daily with newly matured labels, as an online daily process would. The test is a historical simulation rather than live performance. Inspect both numerical accuracy and the size of errors; direction accuracy alone can be misleading when one direction dominates.
+Replay the selected model on 2024-01-02 through 2025-03-27. It refits daily with newly matured labels, as an online daily process would. The test is a historical simulation rather than live performance, and no settings are selected from these results. With $\hat r_t$ the predicted and $r_t$ the realized next-session log return over $N$ forecasts:
 
-**Within predicted directions.** The up hit rate (precision) is actual-up days among predicted-up days divided by all predicted-up days. The down hit rate is actual-down days among predicted-down days divided by all predicted-down days. Neutral predictions are outside these two groups. A group with no predictions has an undefined rate, printed as N/A. Actual down includes zero returns, consistent with the direction counts.""")
+| Metric | Definition | Reading |
+|---|---|---|
+| **Direction accuracy** | Share of sessions whose predicted direction (from the Section 1 cutoffs) equals the realized direction. Realized returns above zero are up; zero or negative returns are down. | Higher is better. Compare with the share of the more frequent realized direction. |
+| **Corr** | Pearson correlation $\mathrm{corr}(\hat r_t,r_t)$ over all $N$ forecasts. | Positive means forecasts move with realized returns. Insensitive to forecast scale. |
+| **MSE** | $N^{-1}\sum_t(\hat r_t-r_t)^2$ in squared log-return units. | Lower is better. Compare with a forecast of zero every day. |
+| **ICIR** | Split forecasts by calendar month of the target date. Each month's information coefficient $\mathrm{IC}_m$ is the Pearson correlation of that month's forecasts and realized returns. $\mathrm{ICIR}=\overline{\mathrm{IC}}/\mathrm{std}(\mathrm{IC})$ with the sample standard deviation; it is not annualized. | Higher means the monthly correlation is positive more consistently. |
+
+SPY is a single series, so the IC here is a correlation through time inside each month instead of the usual correlation across assets on one date. Months with fewer than five forecasts are left out. A metric that cannot be computed, such as the correlation of a constant forecast, is reported as NaN.""")
 
 code("""test_frame = replay(examples[BEST_NAME], BEST_CONFIG, TEST_START, TEST_END)
 test_metrics = score_predictions(test_frame, DIRECTION_UP_RETURN_THRESHOLD, DIRECTION_DOWN_RETURN_THRESHOLD)
-display(test_metrics)
 row = test_metrics.iloc[0]
-print_direction_counts(row, 'Full held-out test')
-up_precision_text = f'{row.up_precision:.2%}' if row.predicted_up_days else 'N/A (no predicted UP days)'
-down_precision_text = f'{row.down_precision:.2%}' if row.predicted_down_days else 'N/A (no predicted DOWN days)'
-print(f'Actual UP within predicted UP: {int(row.correct_up_days)}/{int(row.predicted_up_days)} days; rate: {up_precision_text}')
-print(f'Actual DOWN within predicted DOWN: {int(row.correct_down_days)}/{int(row.predicted_down_days)} days; rate: {down_precision_text}')
 print(f"Held-out period: {len(test_frame)} issue sessions, "
       f"{pd.to_datetime(test_frame.issue_date).min().date()} to "
       f"{pd.to_datetime(test_frame.issue_date).max().date()}; "
       f"targets {pd.to_datetime(test_frame.target_date).min().date()} to "
       f"{pd.to_datetime(test_frame.target_date).max().date()}")
-print(f"Direction accuracy: {row.direction_accuracy:.1%}; "
-      f"majority-direction diagnostic: {row.majority_baseline:.1%}; "
-      f"return MAE: {row.return_mae:.6f}; zero-return MAE: {row.zero_return_mae:.6f}")
+display(test_metrics)
 save_run(OUTPUT, test_frame, BEST_CONFIG, test_metrics, market['coverage'])
 selection.to_csv(OUTPUT / 'validation_selection.csv', index=False)
 
@@ -235,22 +235,69 @@ factor_counts.to_csv(OUTPUT / 'selected_factor_frequency.csv', index=False)
 display(factor_counts.head(12))
 print('Saved results in:', OUTPUT)""")
 
-code("""from IPython.display import display
+md(r"""### 6.1 Direction accuracy
 
-row = test_metrics.iloc[0]
-heldout_comparison = pd.DataFrame([
-    {'Metric': 'Direction accuracy', 'Adaptive two-step Lasso': row.direction_accuracy,
-     'Baseline': row.majority_baseline, 'Baseline method': 'Majority direction'},
-    {'Metric': 'Return MAE', 'Adaptive two-step Lasso': row.return_mae,
-     'Baseline': row.zero_return_mae, 'Baseline method': 'Zero return'},
-])
-formatted_comparison = heldout_comparison.copy()
-for column in ['Adaptive two-step Lasso', 'Baseline']:
-    formatted_comparison[column] = [f'{heldout_comparison.loc[0, column]:.2%}',
-                                    f'{heldout_comparison.loc[1, column]:.6f}']
-print('SPY held-out test: model versus baselines')
-display(formatted_comparison)
-heldout_comparison.to_csv(OUTPUT / 'test_accuracy_and_return_error.csv', index=False)""")
+The counts below use the same direction rules as the accuracy. The majority-direction share is the accuracy of always predicting the more frequent realized direction; it is known only in hindsight. Direction accuracy alone can mislead when one direction dominates, so the hit rate inside each predicted direction is also shown: realized-up days among predicted-up days, and realized-down days among predicted-down days. A direction with no predictions has an undefined rate, printed as N/A.""")
+
+code("""direction = direction_summary(test_frame, DIRECTION_UP_RETURN_THRESHOLD, DIRECTION_DOWN_RETURN_THRESHOLD).iloc[0]
+print(f'Direction accuracy: {row.direction_accuracy:.2%}')
+print(f'Majority-direction share: {direction.majority_baseline:.2%}')
+print_direction_counts(direction, 'Full held-out test')
+up_precision_text = f'{direction.up_precision:.2%}' if direction.predicted_up_days else 'N/A (no predicted UP days)'
+down_precision_text = f'{direction.down_precision:.2%}' if direction.predicted_down_days else 'N/A (no predicted DOWN days)'
+print(f'Actual UP within predicted UP: {int(direction.correct_up_days)}/{int(direction.predicted_up_days)} days; rate: {up_precision_text}')
+print(f'Actual DOWN within predicted DOWN: {int(direction.correct_down_days)}/{int(direction.predicted_down_days)} days; rate: {down_precision_text}')""")
+
+md(r"""### 6.2 Corr
+
+One Pearson correlation over every forecast in the held-out test. Points on the dashed line would be forecasts with exactly the realized size.""")
+
+code("""print(f"Corr: {row['corr']:.6f} over {int(row.n)} forecasts")
+fig, ax = plt.subplots(figsize=(7, 5))
+ax.scatter(test_frame.actual_return, test_frame.predicted_return, s=12, alpha=.6)
+bound = max(np.abs(test_frame.actual_return).max(), np.abs(test_frame.predicted_return).max())*1.05
+ax.plot([-bound, bound], [-bound, bound], '--', color='gray', label='Perfect magnitude match')
+ax.set(xlim=(-bound, bound), ylim=(-bound, bound),
+       xlabel='Realized SPY log return', ylabel='Predicted SPY log return',
+       title=f"Held-out test Corr = {row['corr']:.6f}")
+ax.legend(fontsize=8)
+fig.tight_layout()
+fig.savefig(OUTPUT / 'predicted_vs_realized.png', dpi=160)
+plt.show()""")
+
+md(r"""### 6.3 MSE
+
+The zero-return reference forecasts 0 every day, so its MSE is the mean squared realized return. The skill is $1-\mathrm{MSE}/\mathrm{MSE}_{zero}$: positive when the model beats the zero forecast.""")
+
+code("""zero_return_mse = float(np.mean(test_frame.actual_return.to_numpy(float)**2))
+print(f'MSE: {row.mse:.6e}')
+print(f'Zero-return MSE: {zero_return_mse:.6e}')
+print(f'MSE skill versus zero return: {1 - row.mse/zero_return_mse:.4%}')""")
+
+md(r"""### 6.4 ICIR
+
+Monthly ICs over the held-out test, by calendar month of the target date. The ICIR is their mean divided by their sample standard deviation.""")
+
+code("""ic_table = monthly_ic(test_frame)
+ic_table.to_csv(OUTPUT / 'monthly_ic.csv', index=False)
+display(ic_table)
+print(f'Months: {len(ic_table)}; mean IC: {ic_table.ic.mean():.6f}; '
+      f'IC std: {ic_table.ic.std(ddof=1):.6f}; positive months: {int((ic_table.ic > 0).sum())}')
+print(f'ICIR: {information_ratio(ic_table.ic):.6f}')
+
+fig, ax = plt.subplots(figsize=(11, 4))
+ax.bar(ic_table.month, ic_table.ic)
+ax.axhline(0, color='black', linewidth=.8)
+ax.axhline(ic_table.ic.mean(), color='tab:red', linestyle='--', linewidth=1.2,
+           label=f'Mean IC = {ic_table.ic.mean():.4f}')
+ax.set(title=f'Monthly IC | held-out test | ICIR = {row.icir:.4f}',
+       xlabel='Target month', ylabel='IC (Pearson)')
+ax.tick_params(axis='x', rotation=45)
+ax.grid(alpha=.2, axis='y')
+ax.legend()
+fig.tight_layout()
+fig.savefig(OUTPUT / 'monthly_ic.png', dpi=160)
+plt.show()""")
 
 md(r"""## 7. Fine-tuning and limitations
 
@@ -260,11 +307,11 @@ md(r"""## 7. Fine-tuning and limitations
 - Daily refits are online in the sense of updating after newly observed closes; this notebook is not an always-running service. A live system needs publication cutoffs, data-version logging, and prospective monitoring.
 - A positive test result would still need comparison with additional baselines, costs, and later time periods before use. Poor test performance should be reported as such.
 
-The implementation is in `src/spy_adaptive_lasso.py`. `tests/test_spy_adaptive_lasso.py` checks signature identities, the training-only screen, the weighted OLS second step, and label timing. Price reconstruction below is a visualization derived from predicted returns, not an additional model output.""")
+The implementation is in `src/spy_adaptive_lasso.py`. `tests/test_spy_adaptive_lasso.py` checks signature identities, the training-only screen, the weighted OLS second step, label timing, and the four metrics. Price reconstruction below is a visualization derived from predicted returns, not an additional model output.""")
 
 md(r"""## 8. Test session after a chosen date
 
-Set `SESSION_AFTER_DATE` to a date inside the held-out test range. This section selects forecasts **issued strictly after** that date from the completed daily replay and plots real versus predicted SPY next-session log returns. The horizontal axis is the target close date. Changing only this date does not alter the fitted forecasts.""")
+Set `SESSION_AFTER_DATE` to a date inside the held-out test range. This section selects forecasts **issued strictly after** that date from the completed daily replay, reports the four metrics on that slice, and plots real versus predicted SPY next-session log returns. The horizontal axis is the target close date. Changing only this date does not alter the fitted forecasts.""")
 
 code("""SESSION_AFTER_DATE = '2024-09-01'
 after = pd.Timestamp(SESSION_AFTER_DATE)
@@ -276,7 +323,9 @@ if session_frame.empty:
 session_frame.to_csv(OUTPUT / 'test_session_returns.csv', index=False)
 session_metrics = score_predictions(session_frame, DIRECTION_UP_RETURN_THRESHOLD, DIRECTION_DOWN_RETURN_THRESHOLD)
 display(session_metrics)
-print_direction_counts(session_metrics.iloc[0], f'Test issues after {SESSION_AFTER_DATE}')
+print_direction_counts(direction_summary(session_frame, DIRECTION_UP_RETURN_THRESHOLD,
+                                         DIRECTION_DOWN_RETURN_THRESHOLD).iloc[0],
+                       f'Test issues after {SESSION_AFTER_DATE}')
 print('Issue sessions:', session_frame.issue_date.min(), 'through', session_frame.issue_date.max())
 
 fig, ax = plt.subplots(figsize=(14, 5))
@@ -305,12 +354,8 @@ test_prices = reconstruct_price_comparison(test_frame, market)
 test_prices.to_csv(OUTPUT / 'test_prices.csv', index=False)
 display(test_prices[['issue_date', 'target_date', 'previous_actual_close',
                      'actual_close', 'predicted_close']].head())
-price_mae = np.mean(np.abs(test_prices.predicted_close - test_prices.actual_close))
-last_close_mae = np.mean(np.abs(test_prices.previous_actual_close - test_prices.actual_close))
 print(f'Full held-out test: {len(test_prices)} target sessions, '
       f'{test_prices.target_date.min()} to {test_prices.target_date.max()}')
-print(f'Full held-out price MAE: {price_mae:.3f} USD')
-print(f'Last-close baseline MAE: {last_close_mae:.3f} USD')
 
 fig, ax = plt.subplots(figsize=(14, 5))
 dates_for_price = pd.to_datetime(test_prices.target_date)
@@ -324,134 +369,6 @@ ax.grid(alpha=.2)
 ax.legend()
 fig.tight_layout()
 fig.savefig(OUTPUT / 'test_prices.png', dpi=160)
-plt.show()""")
-
-md(r"""### Daily log-return MAE
-
-This plot covers every target session in the full held-out test. There is one forecast per session, so each day's MAE is its absolute log-return error: `abs(predicted_return - actual_return)`. The dashed line is the mean across the entire test period. The CSV keeps the dates, returns and daily errors.""")
-
-code("""daily_return_errors = test_frame[['issue_date', 'target_date', 'actual_return', 'predicted_return']].copy()
-daily_return_errors = daily_return_errors.sort_values('target_date').reset_index(drop=True)
-daily_return_errors['MAE_log_return'] = np.abs(
-    daily_return_errors.predicted_return - daily_return_errors.actual_return)
-full_test_return_mae = daily_return_errors.MAE_log_return.mean()
-daily_return_errors.to_csv(OUTPUT / 'daily_log_return_mae.csv', index=False)
-print(f'Full held-out log-return MAE: {full_test_return_mae:.6f} over {len(daily_return_errors)} days')
-
-fig, ax = plt.subplots(figsize=(14, 5))
-ax.plot(pd.to_datetime(daily_return_errors.target_date), daily_return_errors.MAE_log_return,
-        label='Daily absolute log-return error (MAE)', linewidth=1.1)
-ax.axhline(full_test_return_mae, color='tab:red', linestyle='--', linewidth=1.2,
-           label=f'Full-test mean MAE = {full_test_return_mae:.6f}')
-ax.set(title='SPY daily log-return MAE | full held-out test',
-       xlabel='Target session date', ylabel='Absolute log-return error (daily MAE)', ylim=(0, None))
-ax.grid(alpha=.2)
-ax.legend()
-fig.tight_layout()
-fig.savefig(OUTPUT / 'daily_log_return_mae.png', dpi=160)
-plt.show()""")
-
-md(r"""### Daily simple-return MAE
-
-Convert both realized and predicted log returns to simple returns with `expm1(log_return)`. Each target session has one forecast, so its daily MAE is `abs(predicted_simple_return - actual_simple_return)`. This plot covers the entire held-out test; errors are displayed in percentage points. The dashed line is the full-test mean. CSV values remain in decimal-return units.""")
-
-code("""from matplotlib.ticker import PercentFormatter
-
-daily_simple_return_errors = test_frame[['issue_date', 'target_date', 'actual_return', 'predicted_return']].copy()
-daily_simple_return_errors = daily_simple_return_errors.sort_values('target_date').reset_index(drop=True)
-daily_simple_return_errors['actual_simple_return'] = np.expm1(daily_simple_return_errors.actual_return)
-daily_simple_return_errors['predicted_simple_return'] = np.expm1(daily_simple_return_errors.predicted_return)
-daily_simple_return_errors['MAE_simple_return'] = np.abs(
-    daily_simple_return_errors.predicted_simple_return - daily_simple_return_errors.actual_simple_return)
-full_test_simple_return_mae = daily_simple_return_errors.MAE_simple_return.mean()
-daily_simple_return_errors.to_csv(OUTPUT / 'daily_simple_return_mae.csv', index=False)
-print(f'Full held-out simple-return MAE: {full_test_simple_return_mae:.6f} '
-      f'({100 * full_test_simple_return_mae:.4f} percentage points) over {len(daily_simple_return_errors)} days')
-
-fig, ax = plt.subplots(figsize=(14, 5))
-ax.plot(pd.to_datetime(daily_simple_return_errors.target_date), daily_simple_return_errors.MAE_simple_return,
-        label='Daily absolute simple-return error (MAE)', linewidth=1.1)
-ax.axhline(full_test_simple_return_mae, color='tab:red', linestyle='--', linewidth=1.2,
-           label=f'Full-test mean MAE = {100 * full_test_simple_return_mae:.4f} percentage points')
-ax.set(title='SPY daily simple-return MAE | full held-out test',
-       xlabel='Target session date', ylabel='Absolute return error (percentage points)', ylim=(0, None))
-ax.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=2, symbol=''))
-ax.grid(alpha=.2)
-ax.legend()
-fig.tight_layout()
-fig.savefig(OUTPUT / 'daily_simple_return_mae.png', dpi=160)
-plt.show()""")
-
-md(r"""## 10. Full-test Pearson Corr and normalized MSE
-
-This section computes one Pearson correlation over **all forecasts in the complete held-out test period**. The after-date plotting filter does not affect this value. Normalized MSE is also computed on the full test; no settings are selected from these results.
-
-**Pearson Corr.** $\mathrm{Corr}=\mathrm{corr}(\hat r_t,r_t)$ measures linear association between predicted and realized returns across sessions. A positive value means forecasts track return variations. It is not the percentage of correctly predicted signs; the separate direction-accuracy metric measures that. Constant series have undefined correlation.
-
-**Normalized MSE.** Normalize both forecasts and outcomes with the **same frozen training mean and standard deviation**: $\hat z_t=(\hat r_t-\mu_{train})/\sigma_{train}$ and $z_t=(r_t-\mu_{train})/\sigma_{train}$. Then $\mathrm{NMSE}=N^{-1}\sum_t(\hat z_t-z_t)^2=\mathrm{MSE}/\sigma_{train}^2$. Lower is better. The reference is the selected model's last `max_train` matured labels at the **first test issue close**. It is fitted once using information then available, never estimated from test outcomes. Independently standardizing the prediction and outcome series would remove amplitude errors, so it would not measure the same magnitude fidelity.
-
-Definition references: [SciPy Pearson correlation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.pearsonr.html) and [scikit-learn MSE](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.mean_squared_error.html).""")
-
-code("""import json
-
-def safe_pearson(predicted, realized):
-    p, y = np.asarray(predicted, dtype=float), np.asarray(realized, dtype=float)
-    if len(p) != len(y) or not np.isfinite(p).all() or not np.isfinite(y).all():
-        raise ValueError('Correlation requires aligned, finite prediction/outcome pairs.')
-    if len(p) < 2 or np.std(p) <= 1e-14 or np.std(y) <= 1e-14:
-        return np.nan
-    return float(np.corrcoef(p, y)[0, 1])
-
-reference_samples = examples[BEST_NAME]
-first_test_issue = pd.Timestamp(test_frame.issue_date.iloc[0])
-eligible = int(reference_samples['target_dates'].searchsorted(first_test_issue, side='right'))
-reference_first = max(0, eligible - BEST_CONFIG.max_train)
-normalization_labels = reference_samples['targets'][reference_first:eligible]
-NORMALIZATION_MEAN = float(np.mean(normalization_labels))
-NORMALIZATION_STD = float(np.std(normalization_labels, ddof=1))
-if len(normalization_labels) < 2 or not np.isfinite(NORMALIZATION_STD) or NORMALIZATION_STD <= 1e-14:
-    raise ValueError('Training reference has insufficient variation for normalization.')
-normalization_info = {
-    'method': 'shared frozen training z-score', 'reference_issue_close': str(first_test_issue.date()),
-    'training_examples': len(normalization_labels),
-    'training_issue_first': str(reference_samples['issue_dates'][reference_first].date()),
-    'training_issue_last': str(reference_samples['issue_dates'][eligible-1].date()),
-    'latest_training_target': str(reference_samples['target_dates'][eligible-1].date()),
-    'mean_log_return': NORMALIZATION_MEAN, 'std_log_return_ddof1': NORMALIZATION_STD,
-}
-display(pd.DataFrame([normalization_info]))
-(OUTPUT / 'return_normalization.json').write_text(json.dumps(normalization_info, indent=2), encoding='utf-8')
-
-y = test_frame.actual_return.to_numpy(float)
-p = test_frame.predicted_return.to_numpy(float)
-FULL_TEST_CORR = safe_pearson(p, y)
-z_y = (y-NORMALIZATION_MEAN)/NORMALIZATION_STD
-z_p = (p-NORMALIZATION_MEAN)/NORMALIZATION_STD
-normalized_mse = float(np.mean((z_p-z_y)**2))
-zero_normalized_mse = float(np.mean((y/NORMALIZATION_STD)**2))
-additional_metrics = pd.DataFrame([{
-    'evaluation': 'Full held-out test', 'n': len(test_frame),
-    'issue_first': str(test_frame.issue_date.min()), 'issue_last': str(test_frame.issue_date.max()),
-    'Pearson_Corr': FULL_TEST_CORR,
-    'MSE_log_returns': float(np.mean((p-y)**2)),
-    'MSE_shared_training_normalized': normalized_mse,
-    'zero_return_normalized_MSE': zero_normalized_mse,
-    'MSE_skill_vs_zero': 1-normalized_mse/zero_normalized_mse,
-}])
-display(additional_metrics)
-additional_metrics.to_csv(OUTPUT / 'additional_return_metrics.csv', index=False)
-print('Saved full-test metrics in:', OUTPUT / 'additional_return_metrics.csv')""")
-
-code("""fig, ax = plt.subplots(figsize=(7, 5))
-ax.scatter(test_frame.actual_return, test_frame.predicted_return, s=12, alpha=.6)
-bound = max(np.abs(test_frame.actual_return).max(), np.abs(test_frame.predicted_return).max())*1.05
-ax.plot([-bound, bound], [-bound, bound], '--', color='gray', label='Perfect magnitude match')
-ax.set(xlim=(-bound, bound), ylim=(-bound, bound),
-            xlabel='Realized SPY log return', ylabel='Predicted SPY log return',
-            title=f'Full-test Pearson Corr = {FULL_TEST_CORR:.6f}')
-ax.legend(fontsize=8)
-fig.tight_layout()
-fig.savefig(OUTPUT / 'additional_return_metrics.png', dpi=160)
 plt.show()""")
 
 notebook = nbf.v4.new_notebook(cells=cells, metadata={

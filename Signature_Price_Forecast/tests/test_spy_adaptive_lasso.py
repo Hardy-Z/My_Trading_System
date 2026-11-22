@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from spy_adaptive_lasso import (AdaptiveTwoStepLasso, ForecastConfig, make_samples,
+from spy_adaptive_lasso import (AdaptiveTwoStepLasso, ForecastConfig, direction_summary,
+                                information_ratio, make_samples, monthly_ic,
                                 piecewise_linear_signature, replay,
                                 predict_directions, reconstruct_price_comparison, score_predictions,
                                 select_factors)
@@ -37,7 +38,7 @@ class AdaptiveTwoStepLassoTests(unittest.TestCase):
                                       [1, -1, 0, -1, 0, 1])
         frame = pd.DataFrame({'actual_return': [.003, -.004, .002, -.003, -.001, -.001],
                               'predicted_return': forecast})
-        metric = score_predictions(frame, .001, -.002).iloc[0]
+        metric = direction_summary(frame, .001, -.002).iloc[0]
         self.assertAlmostEqual(metric.direction_accuracy, 3 / 6)
         self.assertAlmostEqual(metric.up_recall, 1 / 2)
         self.assertAlmostEqual(metric.down_recall, 2 / 4)
@@ -62,15 +63,15 @@ class AdaptiveTwoStepLassoTests(unittest.TestCase):
         y = np.array([-.002, 0., .002, -.001])
         frame = pd.DataFrame({'actual_return': y, 'predicted_return': forecast})
         for threshold in [0., .001, -.001]:
-            metric = score_predictions(frame, threshold=threshold).iloc[0]
+            metric = direction_summary(frame, threshold=threshold).iloc[0]
             self.assertEqual(metric.direction_accuracy,
                              np.mean((forecast > threshold) == (y > 0)))
             self.assertEqual(metric.predicted_neutral_rate, 0.)
-        pd.testing.assert_frame_equal(score_predictions(frame), score_predictions(frame, 0., 0.))
+        pd.testing.assert_frame_equal(direction_summary(frame), direction_summary(frame, 0., 0.))
 
     def test_direction_precision_without_predictions_is_undefined(self):
         frame = pd.DataFrame({'actual_return': [.001, -.001], 'predicted_return': [0., 0.]})
-        metric = score_predictions(frame, .001, -.001).iloc[0]
+        metric = direction_summary(frame, .001, -.001).iloc[0]
         self.assertEqual(metric.correct_up_days, 0)
         self.assertEqual(metric.correct_down_days, 0)
         self.assertTrue(np.isnan(metric.up_precision))
@@ -80,7 +81,44 @@ class AdaptiveTwoStepLassoTests(unittest.TestCase):
         frame = pd.DataFrame({'actual_return': [.001], 'predicted_return': [.001]})
         for up, down in [(np.nan, 0.), (0., np.inf), (-.001, .001)]:
             with self.subTest(up=up, down=down), self.assertRaises(ValueError):
+                direction_summary(frame, up, down)
+            with self.subTest(up=up, down=down), self.assertRaises(ValueError):
                 score_predictions(frame, up, down)
+
+    def test_four_metrics_match_definitions(self):
+        dates = pd.bdate_range('2024-01-02', '2024-03-29')
+        rng = np.random.default_rng(5)
+        y = rng.normal(0, .01, len(dates))
+        forecast = .3 * y + rng.normal(0, .01, len(dates))
+        frame = pd.DataFrame({'target_date': dates.strftime('%Y-%m-%d'),
+                              'actual_return': y, 'predicted_return': forecast})
+        metric = score_predictions(frame).iloc[0]
+        self.assertEqual(list(metric.index),
+                         ['ticker', 'n', 'direction_accuracy', 'corr', 'mse', 'icir'])
+        self.assertAlmostEqual(metric.direction_accuracy, np.mean((forecast > 0) == (y > 0)))
+        self.assertAlmostEqual(metric['corr'], np.corrcoef(forecast, y)[0, 1])
+        self.assertAlmostEqual(metric.mse, np.mean((forecast - y) ** 2))
+        expected_ic = [np.corrcoef(forecast[dates.month == m], y[dates.month == m])[0, 1]
+                       for m in (1, 2, 3)]
+        table = monthly_ic(frame)
+        self.assertEqual(list(table.month), ['2024-01', '2024-02', '2024-03'])
+        np.testing.assert_allclose(table.ic, expected_ic)
+        self.assertAlmostEqual(metric.icir, np.mean(expected_ic) / np.std(expected_ic, ddof=1))
+        self.assertAlmostEqual(metric.direction_accuracy,
+                               direction_summary(frame).iloc[0].direction_accuracy)
+
+    def test_ic_skips_short_months_and_icir_needs_two_months(self):
+        dates = pd.bdate_range('2024-01-02', '2024-02-05')
+        rng = np.random.default_rng(8)
+        frame = pd.DataFrame({'target_date': dates.strftime('%Y-%m-%d'),
+                              'actual_return': rng.normal(0, .01, len(dates)),
+                              'predicted_return': rng.normal(0, .01, len(dates))})
+        self.assertEqual(list(monthly_ic(frame).month), ['2024-01'])
+        self.assertTrue(np.isnan(score_predictions(frame).iloc[0].icir))
+        self.assertTrue(np.isnan(information_ratio([.2, .2, .2])))
+        flat = frame.assign(predicted_return=0.)
+        self.assertTrue(monthly_ic(flat).empty)
+        self.assertTrue(np.isnan(score_predictions(flat).iloc[0]['corr']))
 
     def test_straight_line_and_order(self):
         line = np.array([[[0.], [.3], [1.]]])

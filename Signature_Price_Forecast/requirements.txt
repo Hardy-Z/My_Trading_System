@@ -7,3 +7,4 @@ ipykernel
 requests
 Pillow
 torch
+quant-research-dataset
